@@ -7,6 +7,39 @@ import random
 import time
 import math
 
+class VehicleGenerator():
+    def __init__(self, world, vehicle_bp, number_vehicle):
+        self.number_vehicle = number_vehicle
+        self.vehicle_bp = vehicle_bp
+        self.world = world
+
+    def create_vehicle(self):
+        position_list = []
+        vehicle_actor_list = []
+        for n in range(self.number_vehicle):
+            #spawn_point = carla.Transform()
+            #spawn_point.location = self.world.get_random_location_from_navigation()
+            vehicle_transform = random.choice(self.world.get_map().get_spawn_points())
+            # print("transform is ", vehicle_transform)
+            position_list.append(vehicle_transform)
+
+        for n, position in enumerate(position_list):
+            print("position is ", position)
+            self.vehicle_actor = self.world.spawn_actor(self.vehicle_bp, position)
+            # self.vehicle_actor.set_autopilot(True)
+
+            #location = self.vehicle_actor.get_location()
+            #location.z += 1
+            #self.vehicle_actor.set_location(location)
+
+            vehicle_actor_list.append(self.vehicle_actor)
+
+        if self.number_vehicle == 1:
+            return self.world, vehicle_actor_list[0]
+        else:
+            return self.world, vehicle_actor_list
+
+
 
 class World():
     def __init__(self):
@@ -39,7 +72,9 @@ class World():
         IDによる設計図の選択.
         '''
         # Chose a vehicle blueprint
-        vehicle_bp = random.choice(blueprint_library.filter("vehicle.bmw.*"))
+        vehicle_bp = random.choice(blueprint_library.filter("vehicle.**.*"))
+        self.world, self.gest_vehicle_act_list = VehicleGenerator(self.world, vehicle_bp, 10).create_vehicle()
+        self.world, self.vehicle_actor = VehicleGenerator(self.world, vehicle_bp, 1).create_vehicle()
 
         self.camera_bp = self.world.get_blueprint_library().find('sensor.camera.rgb')
         self.camera_bp.set_attribute('image_size_x', '1920')
@@ -54,24 +89,11 @@ class World():
         rad_rotation = carla.Rotation(pitch=5)
 
         # アクターの設置場所の決定
-        '''
-        actor の設置を行う.
-        '''
-        vehicle_transform = random.choice(self.world.get_map().get_spawn_points())
-        self.vehicle_actor = self.world.spawn_actor(vehicle_bp, vehicle_transform)
-        self.vehicle_actor.set_autopilot(True)
-
-        camera_transform = carla.Transform(carla.Location(x=-5, z=3), carla.Rotation(pitch=-10))
+        camera_transform = carla.Transform(carla.Location(x=-20, z=3), carla.Rotation(pitch=-10))
         self.camera_actor = self.world.spawn_actor(self.camera_bp, camera_transform, attach_to=self.vehicle_actor)
 
         self.rad_transform = carla.Transform(rad_location,rad_rotation)
         self.rad_ego = self.world.spawn_actor(self.radar_bp,self.rad_transform,attach_to=self.vehicle_actor, attachment_type=carla.AttachmentType.Rigid)
-
-        # アクターの処理
-        location = self.vehicle_actor.get_location()
-        location.z += 1
-        self.vehicle_actor.set_location(location)
-        #print("moved vehicle to %s" % location)
 
         # 天気の変更
         weather = carla.WeatherParameters(
@@ -85,7 +107,27 @@ class World():
 
         # マップとwayPointの設定
         self.spectator = self.world.get_spectator()
-        map = self.world.get_map()
+        self.spectator.set_transform(carla.Transform(carla.Location(z=50), carla.Rotation(pitch=-90)))
+        self.map = self.world.get_map()
+
+        waypoint_list = self.map.generate_waypoints(2.0)
+        waypoint_tuple_list = self.map.get_topology()
+        self.visualize_waypoint(waypoint_tuple_list)
+        #print("wayponit_tuple is ", waypoint_tuple_list)
+        #print("vehicle transform is ", self.vehicle_actor.get_transform())
+        #my_geolocation = self.map.transform_to_geolocation(self.vehicle_actor.get_location())
+        #print("my_geolocation", my_geolocation)
+        #info_map = self.map.to_opendrive()
+        #print("info_map is ", info_map)
+
+    def visualize_waypoint(self, waypoint):
+        for cuple_point in waypoint:
+            #print("point is ", cuple_point[0])
+            self.world.debug.draw_line(
+                cuple_point[0].transform.location + carla.Location(z=0),
+                cuple_point[1].transform.location + carla.Location(z=0),
+                thickness=0.025,
+                color=carla.Color(0, 255, 255))
 
 
     def rad_callback(self, radar_data):
@@ -123,7 +165,17 @@ class World():
         self.rad_ego.listen(lambda radar_data: self.rad_callback(radar_data))
         while True:
             self.spectator.set_transform(self.camera_actor.get_transform())
-            time.sleep(0.01)
+            for vehicle in self.gest_vehicle_act_list:
+                waypoint = self.map.get_waypoint(vehicle.get_location())
+                waypoint = random.choice(waypoint.next(0.6))
+                vehicle.set_transform(waypoint.transform)
+
+            waypoint = self.map.get_waypoint(self.vehicle_actor.get_location())
+            waypoint = random.choice(waypoint.next(0.6))
+            self.vehicle_actor.set_transform(waypoint.transform)
+
+            time.sleep(0.001)
+
 
 if __name__ == "__main__":
     World = World()
