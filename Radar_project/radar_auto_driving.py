@@ -6,6 +6,7 @@ from carla import Transform, Location, Rotation
 import random
 import time
 import math
+from multiprocessing import Process
 
 class VehicleGenerator():
     def __init__(self, world, vehicle_bp, number_vehicle):
