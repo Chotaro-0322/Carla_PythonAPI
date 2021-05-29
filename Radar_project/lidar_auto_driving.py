@@ -2,11 +2,15 @@
 # -*- coding: utf-8 -*-
 import carla
 from carla import Transform, Location, Rotation
+import numpy as np
+import matplotlib.pyplot as plt
+import matplotlib.animation as animation
+from mpl_toolkits.mplot3d import Axes3D
 
 import random
 import time
 import math
-from multiprocessing import Process
+import threading
 
 class VehicleGenerator():
     def __init__(self, world, vehicle_bp, number_vehicle):
@@ -82,19 +86,21 @@ class World():
         self.camera_bp.set_attribute('image_size_y', '1080')
         self.camera_bp.set_attribute('fov', '110')
 
-        self.radar_bp = self.world.get_blueprint_library().find("sensor.other.radar")
-        self.radar_bp.set_attribute('horizontal_fov', str(90))
-        self.radar_bp.set_attribute('vertical_fov', str(20))
-        self.radar_bp.set_attribute('range', str(20))
-        rad_location = carla.Location(x=2.0, z=1.0)
-        rad_rotation = carla.Rotation(pitch=5)
+        self.lidar_bp = self.world.get_blueprint_library().find("sensor.lidar.ray_cast")
+        self.lidar_bp.set_attribute('channels', str(32))
+        self.lidar_bp.set_attribute('range', str(10))
+        self.lidar_bp.set_attribute('horizontal_fov', str(360))
+        self.lidar_bp.set_attribute('upper_fov', str(30))
+        self.lidar_bp.set_attribute('lower_fov', str(-30))
+        lid_location = carla.Location(x=2.0, z=1.0)
+        lid_rotation = carla.Rotation(pitch=5)
 
         # アクターの設置場所の決定
         camera_transform = carla.Transform(carla.Location(x=-20, z=3), carla.Rotation(pitch=-10))
         self.camera_actor = self.world.spawn_actor(self.camera_bp, camera_transform, attach_to=self.vehicle_actor)
 
-        self.rad_transform = carla.Transform(rad_location,rad_rotation)
-        self.rad_ego = self.world.spawn_actor(self.radar_bp,self.rad_transform,attach_to=self.vehicle_actor, attachment_type=carla.AttachmentType.Rigid)
+        self.lid_transform = carla.Transform(lid_location,lid_rotation)
+        self.lid_ego = self.world.spawn_actor(self.lidar_bp,self.lid_transform,attach_to=self.vehicle_actor, attachment_type=carla.AttachmentType.Rigid)
 
         # 天気の変更
         weather = carla.WeatherParameters(
@@ -114,12 +120,7 @@ class World():
         waypoint_list = self.map.generate_waypoints(2.0)
         waypoint_tuple_list = self.map.get_topology()
         self.visualize_waypoint(waypoint_tuple_list)
-        #print("wayponit_tuple is ", waypoint_tuple_list)
-        #print("vehicle transform is ", self.vehicle_actor.get_transform())
-        #my_geolocation = self.map.transform_to_geolocation(self.vehicle_actor.get_location())
-        #print("my_geolocation", my_geolocation)
-        #info_map = self.map.to_opendrive()
-        #print("info_map is ", info_map)
+
 
     def visualize_waypoint(self, waypoint):
         for cuple_point in waypoint:
@@ -131,40 +132,24 @@ class World():
                 color=carla.Color(0, 255, 255))
 
 
-    def rad_callback(self, radar_data):
-        velocity_range = 7.5 # m/s
-        current_rot = radar_data.transform.rotation
-        for detect in radar_data:
-            azi = math.degrees(detect.azimuth)
-            alt = math.degrees(detect.altitude)
-            # The 0.25 adjusts a bit the distance so the dots can
-            # be properly seen
-            fw_vec = carla.Vector3D(x=detect.depth - 0.25)
-            carla.Transform(
-                carla.Location(),
-                carla.Rotation(
-                    pitch=current_rot.pitch + alt,
-                    yaw=current_rot.yaw + azi,
-                    roll=current_rot.roll)).transform(fw_vec)
+    def lid_callback(self, lidar_data):
+        #print("lidar_data is ", lidar_data.raw_data)
+        data = np.copy(np.frombuffer(lidar_data.raw_data, dtype=np.dtype('f4')))
+        data = np.reshape(data, (int(data.shape[0] / 4), 4))
 
-            def clamp(min_v, max_v, value):
-                return max(min_v, min(value, max_v))
+        intensity = data[:, -1]
+        points = data[:, :-1]
+        points[:, :1] = -points[:, :1]
 
-            norm_velocity = detect.velocity / velocity_range # range [-1, 1]
-            r = int(clamp(0.0, 1.0, 1.0 - norm_velocity) * 255.0)
-            g = int(clamp(0.0, 1.0, 1.0 - abs(norm_velocity)) * 255.0)
-            b = int(abs(clamp(- 1.0, 0.0, - 1.0 - norm_velocity)) * 255.0)
-            #print("draw point is ", radar_data.transform.location)
-            self.world.debug.draw_point(
-                radar_data.transform.location + fw_vec,
-                size=0.075,
-                life_time=0.06,
-                persistent_lines=False,
-                color=carla.Color(r, g, b))
+        self.buf["pts"] = points
+        self.buf["intensity"] = intensity
 
+    def anime(self, i):
+        if i != 0:
+            plt.cla()
+        self.ax.scatter3D(self.buf["pts"][:, 0], self.buf["pts"][:, 1], self.buf["pts"][:, 2])
 
-    def update(self):
-        self.rad_ego.listen(lambda radar_data: self.rad_callback(radar_data))
+    def carlaEventLoop(self, world):
         while True:
             self.spectator.set_transform(self.camera_actor.get_transform())
             for vehicle in self.gest_vehicle_act_list:
@@ -175,10 +160,32 @@ class World():
             waypoint = self.map.get_waypoint(self.vehicle_actor.get_location())
             waypoint = random.choice(waypoint.next(0.6))
             self.vehicle_actor.set_transform(waypoint.transform)
+            time.sleep(1)
 
-            time.sleep(0.001)
+            world.tick()
+
+    def update(self):
+        self.buf = {'pts': np.zeros((1,3)), 'intensity':np.zeros(1)}
+        # animation setting
+        fig = plt.figure()
+        self.ax = Axes3D(fig)
+        self.ax = fig.add_subplot(111, projection='3d')
+        self.ax.set_xlim3d(0, 10)
+        self.ax.set_ylim3d(0, 10)
+
+        #self.ax.scatter3D(1, 1, 1)
+        self.lid_ego.listen(lambda lidar_data: self.lid_callback(lidar_data))
+
+        worldThread = threading.Thread(target=self.carlaEventLoop, args=[self.world], daemon=True)
+        worldThread.start()
+
+        # lidar update
+        animationThread = animation.FuncAnimation(fig, self.anime, interval=1)
+        print("lidar update", self.buf)
+        plt.show()
 
 
 if __name__ == "__main__":
     World = World()
     World.update()
+    # mlab.show()
