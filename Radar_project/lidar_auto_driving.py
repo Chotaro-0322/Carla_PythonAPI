@@ -12,6 +12,9 @@ import time
 import math
 import threading
 
+def mat_init():
+    pass
+
 class VehicleGenerator():
     def __init__(self, world, vehicle_bp, number_vehicle):
         self.number_vehicle = number_vehicle
@@ -87,13 +90,13 @@ class World():
         self.camera_bp.set_attribute('fov', '110')
 
         self.lidar_bp = self.world.get_blueprint_library().find("sensor.lidar.ray_cast")
-        self.lidar_bp.set_attribute('channels', str(32))
-        self.lidar_bp.set_attribute('range', str(10))
+        self.lidar_bp.set_attribute('channels', str(16))
+        self.lidar_bp.set_attribute('range', str(50))
         self.lidar_bp.set_attribute('horizontal_fov', str(360))
-        self.lidar_bp.set_attribute('upper_fov', str(30))
-        self.lidar_bp.set_attribute('lower_fov', str(-30))
-        lid_location = carla.Location(x=2.0, z=1.0)
-        lid_rotation = carla.Rotation(pitch=5)
+        self.lidar_bp.set_attribute('upper_fov', str(10))
+        self.lidar_bp.set_attribute('lower_fov', str(-10))
+        lid_location = carla.Location(x=0, z=2.0)
+        lid_rotation = carla.Rotation(pitch=0)
 
         # アクターの設置場所の決定
         camera_transform = carla.Transform(carla.Location(x=-20, z=3), carla.Rotation(pitch=-10))
@@ -145,9 +148,12 @@ class World():
         self.buf["intensity"] = intensity
 
     def anime(self, i):
-        if i != 0:
-            plt.cla()
-        self.ax.scatter3D(self.buf["pts"][:, 0], self.buf["pts"][:, 1], self.buf["pts"][:, 2])
+        # print("i is", i)
+        plt.cla()
+        self.ax.set_xlim([-50, 50])
+        self.ax.set_ylim([-50, 50])
+        self.ax.set_zlim([0, 3])
+        self.ax.scatter3D(self.buf["pts"][:, 0], self.buf["pts"][:, 1], self.buf["pts"][:, 2], s=0.1)
 
     def carlaEventLoop(self, world):
         while True:
@@ -160,7 +166,7 @@ class World():
             waypoint = self.map.get_waypoint(self.vehicle_actor.get_location())
             waypoint = random.choice(waypoint.next(0.6))
             self.vehicle_actor.set_transform(waypoint.transform)
-            time.sleep(1)
+            time.sleep(0.01)
 
             world.tick()
 
@@ -170,18 +176,14 @@ class World():
         fig = plt.figure()
         self.ax = Axes3D(fig)
         self.ax = fig.add_subplot(111, projection='3d')
-        self.ax.set_xlim3d(0, 10)
-        self.ax.set_ylim3d(0, 10)
 
-        #self.ax.scatter3D(1, 1, 1)
         self.lid_ego.listen(lambda lidar_data: self.lid_callback(lidar_data))
 
         worldThread = threading.Thread(target=self.carlaEventLoop, args=[self.world], daemon=True)
         worldThread.start()
 
         # lidar update
-        animationThread = animation.FuncAnimation(fig, self.anime, interval=1)
-        print("lidar update", self.buf)
+        animationThread = animation.FuncAnimation(fig, self.anime, init_func=mat_init, interval=10, blit=False)
         plt.show()
 
 
