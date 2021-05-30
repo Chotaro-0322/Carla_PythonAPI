@@ -53,48 +53,51 @@ class World():
     def __init__(self):
         # クライアントとマップの取得
 
-        '''
+        """
         simultor need to set "Client". and this need to provide the IP and port
-        '''
+        """
         client = carla.Client("localhost", 2000)
 
-        '''
+        """
         somethime, time-out is needed.
-        '''
+        """
         client.set_timeout(10.0)
 
-        '''
+        """
         If we have the client, we can directly retrieve the self.world.
-        '''
+        """
         #print(client.get_available_maps())
         self.world = client.load_world("/Game/Carla/Maps/Town01")
 
         # 設計図
         # LiDARのチャンネルなどの設定
-        '''
+        """
         blueprint_library内に含まれる設計図のリストを作成
-        '''
+        """
         blueprint_library = self.world.get_blueprint_library()
 
-        '''
+        """
         IDによる設計図の選択.
-        '''
+        """
         # Chose a vehicle blueprint
         vehicle_bp = random.choice(blueprint_library.filter("vehicle.**.*"))
         self.world, self.gest_vehicle_act_list = VehicleGenerator(self.world, vehicle_bp, 10).create_vehicle()
         self.world, self.vehicle_actor = VehicleGenerator(self.world, vehicle_bp, 1).create_vehicle()
 
-        self.camera_bp = self.world.get_blueprint_library().find('sensor.camera.rgb')
-        self.camera_bp.set_attribute('image_size_x', '1920')
-        self.camera_bp.set_attribute('image_size_y', '1080')
-        self.camera_bp.set_attribute('fov', '110')
+        self.camera_bp = self.world.get_blueprint_library().find("sensor.camera.rgb")
+        self.camera_bp.set_attribute("image_size_x", "1920")
+        self.camera_bp.set_attribute("image_size_y", "1080")
+        self.camera_bp.set_attribute("fov", "110")
 
         self.lidar_bp = self.world.get_blueprint_library().find("sensor.lidar.ray_cast")
-        self.lidar_bp.set_attribute('channels', str(16))
-        self.lidar_bp.set_attribute('range', str(50))
-        self.lidar_bp.set_attribute('horizontal_fov', str(360))
-        self.lidar_bp.set_attribute('upper_fov', str(10))
-        self.lidar_bp.set_attribute('lower_fov', str(-10))
+        self.lidar_bp.set_attribute("channels", str(64))
+        self.lidar_bp.set_attribute("range", str(100))
+        self.lidar_bp.set_attribute('noise_stddev', '0.2')
+        # self.lidar_bp.set_attribute("horizontal_fov", str(360))
+        # self.lidar_bp.set_attribute("upper_fov", str(15))
+        # self.lidar_bp.set_attribute("lower_fov", str(-15))
+        self.lidar_bp.set_attribute("rotation_frequency", str(50))
+
         lid_location = carla.Location(x=0, z=2.0)
         lid_rotation = carla.Rotation(pitch=0)
 
@@ -137,8 +140,9 @@ class World():
 
     def lid_callback(self, lidar_data):
         #print("lidar_data is ", lidar_data.raw_data)
-        data = np.copy(np.frombuffer(lidar_data.raw_data, dtype=np.dtype('f4')))
+        data = np.copy(np.frombuffer(lidar_data.raw_data, dtype=np.dtype("f4")))
         data = np.reshape(data, (int(data.shape[0] / 4), 4))
+        print("data is ", data.shape)
 
         intensity = data[:, -1]
         points = data[:, :-1]
@@ -150,9 +154,9 @@ class World():
     def anime(self, i):
         # print("i is", i)
         plt.cla()
-        self.ax.set_xlim([-50, 50])
-        self.ax.set_ylim([-50, 50])
-        self.ax.set_zlim([0, 3])
+        self.ax.set_xlim([-100, 100])
+        self.ax.set_ylim([-100, 100])
+        self.ax.set_zlim([-5, 5])
         self.ax.scatter3D(self.buf["pts"][:, 0], self.buf["pts"][:, 1], self.buf["pts"][:, 2], s=0.1)
 
     def carlaEventLoop(self, world):
@@ -160,22 +164,23 @@ class World():
             self.spectator.set_transform(self.camera_actor.get_transform())
             for vehicle in self.gest_vehicle_act_list:
                 waypoint = self.map.get_waypoint(vehicle.get_location())
-                waypoint = random.choice(waypoint.next(0.6))
+                waypoint = random.choice(waypoint.next(0.3))
                 vehicle.set_transform(waypoint.transform)
 
             waypoint = self.map.get_waypoint(self.vehicle_actor.get_location())
-            waypoint = random.choice(waypoint.next(0.6))
+            waypoint = random.choice(waypoint.next(0.3))
             self.vehicle_actor.set_transform(waypoint.transform)
-            time.sleep(0.01)
+            time.sleep(0.005)
 
             world.tick()
 
     def update(self):
-        self.buf = {'pts': np.zeros((1,3)), 'intensity':np.zeros(1)}
+        self.buf = {"pts": np.zeros((1,3)), "intensity":np.zeros(1)}
         # animation setting
-        fig = plt.figure()
+        fig = plt.figure(figsize=plt.figaspect(0.5))
         self.ax = Axes3D(fig)
-        self.ax = fig.add_subplot(111, projection='3d')
+        self.ax.set_box_aspect((10, 10, 1))
+        #self.ax = fig.add_subplot(111, projection="3d")
 
         self.lid_ego.listen(lambda lidar_data: self.lid_callback(lidar_data))
 
