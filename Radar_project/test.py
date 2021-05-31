@@ -6,6 +6,7 @@ s = mlab.surf(x, y, np.asarray(x*0.1, 'd'))
 @mlab.animate
 def anim():
     for i in range(10):
+        print("hello!!")
         s.mlab_source.scalars = np.asarray(x*0.1*(i+1), 'd')
         yield
 

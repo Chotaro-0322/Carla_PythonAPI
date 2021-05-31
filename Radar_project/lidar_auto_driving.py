@@ -3,9 +3,10 @@
 import carla
 from carla import Transform, Location, Rotation
 import numpy as np
-import matplotlib.pyplot as plt
-import matplotlib.animation as animation
-from mpl_toolkits.mplot3d import Axes3D
+# import matplotlib.pyplot as plt
+# import matplotlib.animation as animation
+# from mpl_toolkits.mplot3d import Axes3D
+from mayavi import mlab
 
 import random
 import time
@@ -90,15 +91,15 @@ class World():
         self.camera_bp.set_attribute("fov", "110")
 
         self.lidar_bp = self.world.get_blueprint_library().find("sensor.lidar.ray_cast")
-        self.lidar_bp.set_attribute("channels", str(64))
+        self.lidar_bp.set_attribute("channels", str(16))
         self.lidar_bp.set_attribute("range", str(100))
         self.lidar_bp.set_attribute('noise_stddev', '0.2')
         # self.lidar_bp.set_attribute("horizontal_fov", str(360))
         # self.lidar_bp.set_attribute("upper_fov", str(15))
         # self.lidar_bp.set_attribute("lower_fov", str(-15))
-        self.lidar_bp.set_attribute("rotation_frequency", str(50))
+        self.lidar_bp.set_attribute("rotation_frequency", str(1/0.05))
 
-        lid_location = carla.Location(x=0, z=2.0)
+        lid_location = carla.Location(x=-0.5, z=2.0)
         lid_rotation = carla.Rotation(pitch=0)
 
         # アクターの設置場所の決定
@@ -142,7 +143,7 @@ class World():
         #print("lidar_data is ", lidar_data.raw_data)
         data = np.copy(np.frombuffer(lidar_data.raw_data, dtype=np.dtype("f4")))
         data = np.reshape(data, (int(data.shape[0] / 4), 4))
-        print("data is ", data.shape)
+        #print("data is ", data.shape)
 
         intensity = data[:, -1]
         points = data[:, :-1]
@@ -151,13 +152,7 @@ class World():
         self.buf["pts"] = points
         self.buf["intensity"] = intensity
 
-    def anime(self, i):
-        # print("i is", i)
-        plt.cla()
-        self.ax.set_xlim([-100, 100])
-        self.ax.set_ylim([-100, 100])
-        self.ax.set_zlim([-5, 5])
-        self.ax.scatter3D(self.buf["pts"][:, 0], self.buf["pts"][:, 1], self.buf["pts"][:, 2], s=0.1)
+
 
     def carlaEventLoop(self, world):
         while True:
@@ -177,22 +172,45 @@ class World():
     def update(self):
         self.buf = {"pts": np.zeros((1,3)), "intensity":np.zeros(1)}
         # animation setting
-        fig = plt.figure(figsize=plt.figaspect(0.5))
-        self.ax = Axes3D(fig)
-        self.ax.set_box_aspect((10, 10, 1))
+        # fig = plt.figure(figsize=plt.figaspect(0.5))
+        # self.ax = Axes3D(fig)
+        # self.ax.set_box_aspect((10, 10, 1))
         #self.ax = fig.add_subplot(111, projection="3d")
-
         self.lid_ego.listen(lambda lidar_data: self.lid_callback(lidar_data))
 
         worldThread = threading.Thread(target=self.carlaEventLoop, args=[self.world], daemon=True)
         worldThread.start()
 
+        vis = mlab.points3d([6, 2, 3, 4], [1, 2, 3, 2], [1, 1, 3, 5], mode="point", figure=mlab.figure(bgcolor=(0, 0, 0)))
+        @mlab.animate(delay=10)
+        def updateAnimation():
+            while True:
+                vis.mlab_source.reset(x=self.buf["pts"][:, 0], y=self.buf["pts"][:, 1], z=self.buf["pts"][:, 2], color=(0, 1, 1))
+                yield
+
+        # ball = mlab.points3d(np.array(1.), np.array(0.), np.array(0.))
+
+        updateAnimation()
+        mlab.show()
         # lidar update
-        animationThread = animation.FuncAnimation(fig, self.anime, init_func=mat_init, interval=10, blit=False)
-        plt.show()
+        # animationThread = animation.FuncAnimation(fig, self.anime, init_func=mat_init, interval=10, blit=False)
+        # lidarThread = threading.Thread(target=self.anime)
+        # @mlab.animate(delay=10)
+        # def anim():
+        #     # print("i is", i)
+        #     # plt.cla()
+        #     # self.ax.set_xlim([-100, 100])
+        #     # self.ax.set_ylim([-100, 100])
+        #     # self.ax.set_zlim([-5, 5])
+        #     # self.ax.scatter3D(self.buf["pts"][:, 0], self.buf["pts"][:, 1], self.buf["pts"][:, 2])
+        #     while True:
+        #         self.vis.mlab_source.reset(x=self.buf["pts"][:, 0], y=self.buf["pts"][:, 1], z=self.buf["pts"][:, 2], scalars=self.buf["intensity"])
+        #         yield
 
 
-if __name__ == "__main__":
-    World = World()
-    World.update()
-    # mlab.show()
+# if __name__ == "__main__":
+World = World()
+
+World.update()
+# mlab.show()
+
