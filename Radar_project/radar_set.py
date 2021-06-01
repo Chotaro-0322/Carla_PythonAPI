@@ -7,39 +7,131 @@ import random
 import time
 import math
 from multiprocessing import Process
+import threading
+import pcl
 
 class VehicleGenerator():
-    def __init__(self, world, vehicle_bp, number_vehicle):
+    def __init__(self, world, map, blueprint_library, number_vehicle):
         self.number_vehicle = number_vehicle
-        self.vehicle_bp = vehicle_bp
+        self.blueprint_library = blueprint_library
         self.world = world
+        self.map = map
+        self.vehicle_status = {}
+
+        # radar_bp
+        self.radar_bp = self.world.get_blueprint_library().find("sensor.other.radar")
+        self.radar_bp.set_attribute('horizontal_fov', str(9))
+        self.radar_bp.set_attribute('vertical_fov', str(9))
+        self.radar_bp.set_attribute('range', str(250))
+        self.radar_bp.set_attribute('points_per_second', str(1500))
+        self.rad_location = carla.Location(x=90.0, y=131, z=2.0)
+        self.rad_rotation = carla.Rotation(pitch=-1, yaw=90)
+        self.rad_transform = carla.Transform(self.rad_location, self.rad_rotation)
 
     def create_vehicle(self):
         position_list = []
-        vehicle_actor_list = []
+        self.vehicle_actor_list = []
+        self.rad_actor_list = []
         for n in range(self.number_vehicle):
-            #spawn_point = carla.Transform()
-            #spawn_point.location = self.world.get_random_location_from_navigation()
+            # spawn_point = carla.Transform()
+            # spawn_point.location = self.world.get_random_location_from_navigation()
             vehicle_transform = random.choice(self.world.get_map().get_spawn_points())
             # print("transform is ", vehicle_transform)
             position_list.append(vehicle_transform)
-
+        num_lost_vehicle = 0
         for n, position in enumerate(position_list):
             print("position is ", position)
-            self.vehicle_actor = self.world.spawn_actor(self.vehicle_bp, position)
-            # self.vehicle_actor.set_autopilot(True)
+            try:
+                self.vehicle_bp = random.choice(self.blueprint_library.filter("vehicle.**.*"))
+                self.vehicle_actor = self.world.spawn_actor(self.vehicle_bp, position)
+                self.rad_ego = self.world.spawn_actor(self.radar_bp, self.rad_transform, attach_to=self.vehicle_actor, attachment_type=carla.AttachmentType.Rigid)
+                self.vehicle_actor_list.append(self.vehicle_actor)
+                self.rad_actor_list.append(self.rad_ego)
 
-            #location = self.vehicle_actor.get_location()
-            #location.z += 1
-            #self.vehicle_actor.set_location(location)
+                # 最初は全て衝突していない
+                self.vehicle_status[str(n - num_lost_vehicle)] = False
 
-            vehicle_actor_list.append(self.vehicle_actor)
+            except RuntimeError:
+                print("Warnig : 車の出現位置が被りました")
+                num_lost_vehicle += 1
+                pass
+            #self.vehicle_actor.set_autopilot(True)
+        print("車の状態は", self.vehicle_status)
+
 
         if self.number_vehicle == 1:
-            return self.world, vehicle_actor_list[0]
+            return self.world
         else:
-            return self.world, vehicle_actor_list
+            return self.world
 
+    def vehicle_transport(self):
+        # print("vehicle num is ", vehicle_num, "collision is ", collision)
+        for i, vehicle in enumerate(self.vehicle_actor_list):
+            if self.vehicle_status[str(i)] == False:
+                # print("vehicle num is ", vehicle_num, "collision is ", collision)
+                waypoint = self.map.get_waypoint(vehicle.get_location())
+                waypoint = random.choice(waypoint.next(0.3))
+                vehicle.set_transform(waypoint.transform)
+                # vehicle.set_location(carla.Location(x=vehicle.get_location().x, y=vehicle.get_location().y ,z=0))
+                # vehicle.set_location(carla.Location(z=0))
+            else:
+                waypoint = self.map.get_waypoint(vehicle.get_location())
+                waypoint = random.choice(waypoint.next(0.0001))
+                vehicle.set_transform(waypoint.transform)
+                # vehicle.set_location(carla.Location(x=vehicle.get_location().x, y=vehicle.get_location().y ,z=0))
+                # print("i ", i, "vehivle is stop")
+                pass
+
+    def vehicle_radar_callback(self, vehicle_num ,radar_data):
+        velocity_range = 7.5 # m/s
+        current_rot = radar_data.transform.rotation
+        collision_bool = []
+        # print("vehicle_num is ", vehicle_num)
+        for detect in radar_data:
+            azi = math.degrees(detect.azimuth)
+            alt = math.degrees(detect.altitude)
+            # The 0.25 adjusts a bit the distance so the dots can
+            # be properly seen
+            if detect.depth < 3:
+                collision_bool.append(True)
+            else:
+                collision_bool.append(False)
+
+        if len(collision_bool) > 50:
+            # print("vehicle__num", vehicle_num ,"detect depth ", detect.depth)
+            self.vehicle_status[str(vehicle_num)] = True
+        else:
+            self.vehicle_status[str(vehicle_num)] = False
+
+            # self.fw_vec = carla.Vector3D(x=detect.depth - 0.25)
+            # if (detect.velocity != 0) & (azi < 0):
+            #     print("detect : velocity", detect.velocity, "destance", detect.depth, "azi", azi)
+            # carla.Transform(
+            #     carla.Location(),
+            #     carla.Rotation(
+            #         pitch=current_rot.pitch + alt,
+            #         yaw=current_rot.yaw + azi,
+            #         roll=current_rot.roll)).transform(fw_vec)
+
+            # def clamp(min_v, max_v, value):
+            #     return max(min_v, min(value, max_v))
+
+            # norm_velocity = detect.velocity / velocity_range # range [-1, 1]
+            # r = int(clamp(0.0, 1.0, 1.0 - norm_velocity) * 255.0)
+            # g = int(clamp(0.0, 1.0, 1.0 - abs(norm_velocity)) * 255.0)
+            # b = int(abs(clamp(- 1.0, 0.0, - 1.0 - norm_velocity)) * 255.0)
+            # #print("draw point is ", radar_data.transform.location)
+            # # print("radar location is ", (radar_data.transform.location + fw_vec))
+            # self.world.debug.draw_point(
+            #     radar_data.transform.location + fw_vec,
+            #     size=0.075,
+            #     life_time=0.06,
+            #     persistent_lines=False,
+            #     color=carla.Color(r, g, b))
+
+    def radar_listen(self):
+        for i, radar_act in enumerate(self.rad_actor_list):
+            radar_act.listen(lambda radar_data: self.vehicle_radar_callback(i, radar_data))
 
 
 class World():
@@ -69,13 +161,24 @@ class World():
         '''
         blueprint_library = self.world.get_blueprint_library()
 
+        # 観客視点とマップとwayPointの設定
+        self.spectator = self.world.get_spectator()
+        self.spectator.set_transform(carla.Transform(carla.Location(x=90, y=131, z=10), carla.Rotation(pitch=-40, yaw=95)))
+        self.map = self.world.get_map()
+
+        waypoint_list = self.map.generate_waypoints(2.0)
+        waypoint_tuple_list = self.map.get_topology()
+        self.visualize_waypoint(waypoint_tuple_list)
+
         '''
         IDによる設計図の選択.
         '''
         # Chose a vehicle blueprint
-        vehicle_bp = random.choice(blueprint_library.filter("vehicle.**.*"))
-        self.world, self.gest_vehicle_act_list = VehicleGenerator(self.world, vehicle_bp, 10).create_vehicle()
-        self.world, self.vehicle_actor = VehicleGenerator(self.world, vehicle_bp, 1).create_vehicle()
+        self.GestVehicle = VehicleGenerator(self.world, self.map, blueprint_library, 30)
+        self.MainVehicle = VehicleGenerator(self.world, self.map, blueprint_library, 1)
+
+        self.world = self.GestVehicle.create_vehicle()
+        self.world = self.MainVehicle.create_vehicle()
 
         self.camera_bp = self.world.get_blueprint_library().find('sensor.camera.rgb')
         self.camera_bp.set_attribute('image_size_x', '1920')
@@ -83,11 +186,22 @@ class World():
         self.camera_bp.set_attribute('fov', '200')
 
         self.radar_bp = self.world.get_blueprint_library().find("sensor.other.radar")
-        self.radar_bp.set_attribute('horizontal_fov', str(30))
-        self.radar_bp.set_attribute('vertical_fov', str(30))
-        self.radar_bp.set_attribute('range', str(100))
-        rad_location = carla.Location(x=95.0, y=150, z=1.0)
-        rad_rotation = carla.Rotation(pitch=-0, yaw=95)
+        self.radar_bp.set_attribute('horizontal_fov', str(9))
+        self.radar_bp.set_attribute('vertical_fov', str(9))
+        self.radar_bp.set_attribute('range', str(250))
+        self.radar_bp.set_attribute('points_per_second', str(1500))
+        rad_location = carla.Location(x=90.0, y=131, z=2.0)
+        rad_rotation = carla.Rotation(pitch=-1, yaw=90)
+        rad_box = carla.BoundingBox(rad_location, carla.Vector3D(x=0.5, y=0.5, z=0.5))
+
+        # visualize radar
+        self.world.debug.draw_box(
+            rad_box,
+            rad_rotation,
+            thickness=0.1,
+            color=carla.Color(0, 255, 255),
+            life_time=-1.0
+        )
 
         # アクターの設置場所の決定
         camera_transform = carla.Transform(carla.Location(x=95, y=150, z=1.0), carla.Rotation(pitch=0, yaw=95))
@@ -106,20 +220,6 @@ class World():
 
         print(self.world.get_weather())
 
-        # マップとwayPointの設定
-        self.spectator = self.world.get_spectator()
-        self.spectator.set_transform(carla.Transform(carla.Location(x=95, y=130, z=10), carla.Rotation(pitch=-40, yaw=95)))
-        self.map = self.world.get_map()
-
-        waypoint_list = self.map.generate_waypoints(2.0)
-        waypoint_tuple_list = self.map.get_topology()
-        self.visualize_waypoint(waypoint_tuple_list)
-        #print("wayponit_tuple is ", waypoint_tuple_list)
-        #print("vehicle transform is ", self.vehicle_actor.get_transform())
-        #my_geolocation = self.map.transform_to_geolocation(self.vehicle_actor.get_location())
-        #print("my_geolocation", my_geolocation)
-        #info_map = self.map.to_opendrive()
-        #print("info_map is ", info_map)
 
     def visualize_waypoint(self, waypoint):
         for cuple_point in waypoint:
@@ -140,6 +240,8 @@ class World():
             # The 0.25 adjusts a bit the distance so the dots can
             # be properly seen
             fw_vec = carla.Vector3D(x=detect.depth - 0.25)
+            # if (detect.velocity != 0) & (azi < 0):
+            #     print("detect : velocity", detect.velocity, "destance", detect.depth, "azi", azi)
             carla.Transform(
                 carla.Location(),
                 carla.Rotation(
@@ -154,7 +256,6 @@ class World():
             r = int(clamp(0.0, 1.0, 1.0 - norm_velocity) * 255.0)
             g = int(clamp(0.0, 1.0, 1.0 - abs(norm_velocity)) * 255.0)
             b = int(abs(clamp(- 1.0, 0.0, - 1.0 - norm_velocity)) * 255.0)
-            #print("draw point is ", radar_data.transform.location)
             self.world.debug.draw_point(
                 radar_data.transform.location + fw_vec,
                 size=0.075,
@@ -162,20 +263,17 @@ class World():
                 persistent_lines=False,
                 color=carla.Color(r, g, b))
 
+    # def radar_clutering(self, radar_position):
+    #     pointcloud = pcl.Pointclouod():
+
 
     def update(self):
         self.rad_ego.listen(lambda radar_data: self.rad_callback(radar_data))
-        # self.spectator.set_transform(self.camera_actor.get_transform())
+        vehicleThread = threading.Thread(target=self.GestVehicle.radar_listen())
+        vehicleThread.start()
         while True:
-            for vehicle in self.gest_vehicle_act_list:
-                waypoint = self.map.get_waypoint(vehicle.get_location())
-                waypoint = random.choice(waypoint.next(0.6))
-                vehicle.set_transform(waypoint.transform)
-
-            waypoint = self.map.get_waypoint(self.vehicle_actor.get_location())
-            waypoint = random.choice(waypoint.next(0.6))
-            self.vehicle_actor.set_transform(waypoint.transform)
-
+            self.GestVehicle.vehicle_transport()
+            self.MainVehicle.vehicle_transport()
             time.sleep(0.001)
 
 
