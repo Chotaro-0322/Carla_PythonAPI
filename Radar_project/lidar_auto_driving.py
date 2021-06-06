@@ -2,10 +2,8 @@
 # -*- coding: utf-8 -*-
 import carla
 from carla import Transform, Location, Rotation
+from agents.navigation.controller import VehiclePIDController
 import numpy as np
-# import matplotlib.pyplot as plt
-# import matplotlib.animation as animation
-# from mpl_toolkits.mplot3d import Axes3D
 from mayavi import mlab
 
 import random
@@ -25,6 +23,7 @@ class VehicleGenerator():
     def create_vehicle(self):
         position_list = []
         vehicle_actor_list = []
+        controll_list = []
         for n in range(self.number_vehicle):
             #spawn_point = carla.Transform()
             #spawn_point.location = self.world.get_random_location_from_navigation()
@@ -35,6 +34,8 @@ class VehicleGenerator():
         for n, position in enumerate(position_list):
             print("position is ", position)
             self.vehicle_actor = self.world.spawn_actor(self.vehicle_bp, position)
+            self.custom_controller = VehiclePIDController(self.vehicle_actor, args_lateral = {'K_P': 1, 'K_D': 0.0, 'K_I': 0}, args_longitudinal = {'K_P': 1, 'K_D': 0.0, 'K_I': 0.0})
+
             # self.vehicle_actor.set_autopilot(True)
 
             #location = self.vehicle_actor.get_location()
@@ -42,11 +43,12 @@ class VehicleGenerator():
             #self.vehicle_actor.set_location(location)
 
             vehicle_actor_list.append(self.vehicle_actor)
+            controll_list.append(self.custom_controller)
 
         if self.number_vehicle == 1:
-            return self.world, vehicle_actor_list[0]
+            return self.world, vehicle_actor_list[0], controll_list[0]
         else:
-            return self.world, vehicle_actor_list
+            return self.world, vehicle_actor_list, controll_list
 
 
 
@@ -82,8 +84,8 @@ class World():
         """
         # Chose a vehicle blueprint
         vehicle_bp = random.choice(blueprint_library.filter("vehicle.**.*"))
-        self.world, self.gest_vehicle_act_list = VehicleGenerator(self.world, vehicle_bp, 10).create_vehicle()
-        self.world, self.vehicle_actor = VehicleGenerator(self.world, vehicle_bp, 1).create_vehicle()
+        self.world, self.gest_vehicle_act_list, self.gest_controll_list = VehicleGenerator(self.world, vehicle_bp, 10).create_vehicle()
+        self.world, self.vehicle_actor, self.controll_list = VehicleGenerator(self.world, vehicle_bp, 1).create_vehicle()
 
         self.camera_bp = self.world.get_blueprint_library().find("sensor.camera.rgb")
         self.camera_bp.set_attribute("image_size_x", "1920")
@@ -157,25 +159,20 @@ class World():
     def carlaEventLoop(self, world):
         while True:
             self.spectator.set_transform(self.camera_actor.get_transform())
-            for vehicle in self.gest_vehicle_act_list:
+            for vehicle, controll in zip(self.gest_vehicle_act_list, self.gest_controll_list):
                 waypoint = self.map.get_waypoint(vehicle.get_location())
-                waypoint = random.choice(waypoint.next(0.3))
-                vehicle.set_transform(waypoint.transform)
+                waypoint = random.choice(waypoint.next(5))
+                controll_signal = controll.run_step(30, waypoint)
+                vehicle.apply_control(controll_signal)
 
             waypoint = self.map.get_waypoint(self.vehicle_actor.get_location())
-            waypoint = random.choice(waypoint.next(0.3))
-            self.vehicle_actor.set_transform(waypoint.transform)
-            time.sleep(0.005)
+            waypoint = random.choice(waypoint.next(5))
+            controll_signal = self.controll_list.run_step(30, waypoint)
+            self.vehicle_actor.apply_control(controll_signal)
 
-            world.tick()
-
+            time.sleep(0.05)
     def update(self):
         self.buf = {"pts": np.zeros((1,3)), "intensity":np.zeros(1)}
-        # animation setting
-        # fig = plt.figure(figsize=plt.figaspect(0.5))
-        # self.ax = Axes3D(fig)
-        # self.ax.set_box_aspect((10, 10, 1))
-        #self.ax = fig.add_subplot(111, projection="3d")
         self.lid_ego.listen(lambda lidar_data: self.lid_callback(lidar_data))
 
         worldThread = threading.Thread(target=self.carlaEventLoop, args=[self.world], daemon=True)
@@ -188,24 +185,8 @@ class World():
                 vis.mlab_source.reset(x=self.buf["pts"][:, 0], y=self.buf["pts"][:, 1], z=self.buf["pts"][:, 2], color=(0, 1, 1))
                 yield
 
-        # ball = mlab.points3d(np.array(1.), np.array(0.), np.array(0.))
-
         updateAnimation()
         mlab.show()
-        # lidar update
-        # animationThread = animation.FuncAnimation(fig, self.anime, init_func=mat_init, interval=10, blit=False)
-        # lidarThread = threading.Thread(target=self.anime)
-        # @mlab.animate(delay=10)
-        # def anim():
-        #     # print("i is", i)
-        #     # plt.cla()
-        #     # self.ax.set_xlim([-100, 100])
-        #     # self.ax.set_ylim([-100, 100])
-        #     # self.ax.set_zlim([-5, 5])
-        #     # self.ax.scatter3D(self.buf["pts"][:, 0], self.buf["pts"][:, 1], self.buf["pts"][:, 2])
-        #     while True:
-        #         self.vis.mlab_source.reset(x=self.buf["pts"][:, 0], y=self.buf["pts"][:, 1], z=self.buf["pts"][:, 2], scalars=self.buf["intensity"])
-        #         yield
 
 
 # if __name__ == "__main__":
