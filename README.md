@@ -15,3 +15,5 @@ https://carla.readthedocs.io/en/latest/start_quickstart/
 ![radar](https://github.com/Chotaro-0322/Carla_PythonAPI/wiki/image/carla_gif.gif)
 ### LiDAR
 ![lidar](https://github.com/Chotaro-0322/Carla_PythonAPI/wiki/image/Carla5.gif)
+### Street RADAR
+![lidar](https://github.com/Chotaro-0322/Carla_PythonAPI/wiki/image/carla6.gif)
