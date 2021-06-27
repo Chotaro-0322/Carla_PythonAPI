@@ -12,6 +12,20 @@ import threading
 import pcl
 # import pdb
 
+
+class PedestrianGenerator():
+    def __init__(self, worls, map, blueprint_library, number_pedestrian):
+        self.number_vehicle = number_pedestrian
+        self.blueprint_vehicle = blueprint_library
+        self.world = self.world
+        self.map = mapself.vehicle_status = {}
+
+    def create_pedestrian(self):
+        self.waker_bp = self.world.get_blueprint_library().filter("walker.pedestrian.")
+        self.controller_bp = self.world.get_blueprint_library().find("controller.ai.walker")
+
+
+
 class VehicleGenerator():
     def __init__(self, world, map, blueprint_library, number_vehicle):
         self.number_vehicle = number_vehicle
@@ -167,7 +181,7 @@ class World():
         # 観客視点とマップとwayPointの設定
         self.spectator = self.world.get_spectator()
         # self.spectator.set_transform(carla.Transform(carla.Location(x=90, y=131, z=10), carla.Rotation(pitch=-40, yaw=95)))
-        self.spectator.set_transform(carla.Transform(carla.Location(x=90, y=131, z=90), carla.Rotation(pitch=-40, yaw=95)))
+        self.spectator.set_transform(carla.Transform(carla.Location(x=90, y=131, z=10), carla.Rotation(pitch=-40, yaw=95)))
         self.map = self.world.get_map()
 
         waypoint_list = self.map.generate_waypoints(2.0)
@@ -178,7 +192,7 @@ class World():
         IDによる設計図の選択.
         '''
         # Chose a vehicle blueprint
-        self.GestVehicle = VehicleGenerator(self.world, self.map, blueprint_library, 10)
+        self.GestVehicle = VehicleGenerator(self.world, self.map, blueprint_library, 30)
         # self.MainVehicle = VehicleGenerator(self.world, self.map, blueprint_library, 1)
 
         self.world = self.GestVehicle.create_vehicle()
@@ -192,7 +206,7 @@ class World():
         self.radar_bp = self.world.get_blueprint_library().find("sensor.other.radar")
         self.radar_bp.set_attribute('horizontal_fov', str(9))
         self.radar_bp.set_attribute('vertical_fov', str(9))
-        self.radar_bp.set_attribute('range', str(250))
+        self.radar_bp.set_attribute('range', str(100))
         self.radar_bp.set_attribute('points_per_second', str(1500))
         rad_location = carla.Location(x=90.0, y=131, z=2.0)
         rad_rotation = carla.Rotation(pitch=-1, yaw=90)
@@ -265,7 +279,7 @@ class World():
                 size=0.075,
                 life_time=0.06,
                 persistent_lines=False,
-                color=carla.Color(r, g, b))
+                color=carla.Color(255 - r, 255 - g, 255 - b))
 
     # def radar_clutering(self, radar_position):
     #     pointcloud = pcl.Pointclouod():

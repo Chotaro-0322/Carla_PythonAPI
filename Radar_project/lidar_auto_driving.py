@@ -70,7 +70,7 @@ class World():
         If we have the client, we can directly retrieve the self.world.
         """
         #print(client.get_available_maps())
-        self.world = client.load_world("/Game/Carla/Maps/Town01")
+        self.world = client.load_world("/Game/Carla/Maps/six_map")
 
         # 設計図
         # LiDARのチャンネルなどの設定
@@ -84,7 +84,7 @@ class World():
         """
         # Chose a vehicle blueprint
         vehicle_bp = random.choice(blueprint_library.filter("vehicle.**.*"))
-        self.world, self.gest_vehicle_act_list, self.gest_controll_list = VehicleGenerator(self.world, vehicle_bp, 10).create_vehicle()
+        # self.world, self.gest_vehicle_act_list, self.gest_controll_list = VehicleGenerator(self.world, vehicle_bp, 1).create_vehicle()
         self.world, self.vehicle_actor, self.controll_list = VehicleGenerator(self.world, vehicle_bp, 1).create_vehicle()
 
         self.camera_bp = self.world.get_blueprint_library().find("sensor.camera.rgb")
@@ -159,14 +159,14 @@ class World():
     def carlaEventLoop(self, world):
         while True:
             self.spectator.set_transform(self.camera_actor.get_transform())
-            for vehicle, controll in zip(self.gest_vehicle_act_list, self.gest_controll_list):
-                waypoint = self.map.get_waypoint(vehicle.get_location())
-                waypoint = random.choice(waypoint.next(5))
-                controll_signal = controll.run_step(30, waypoint)
-                vehicle.apply_control(controll_signal)
+            # for vehicle, controll in zip(self.gest_vehicle_act_list, self.gest_controll_list):
+            #     waypoint = self.map.get_waypoint(vehicle.get_location())
+            #     waypoint = random.choice(waypoint.next(5))
+            #     controll_signal = controll.run_step(30, waypoint)
+            #     vehicle.apply_control(controll_signal)
 
             waypoint = self.map.get_waypoint(self.vehicle_actor.get_location())
-            waypoint = random.choice(waypoint.next(5))
+            waypoint = random.choice(waypoint.next(1))
             controll_signal = self.controll_list.run_step(30, waypoint)
             self.vehicle_actor.apply_control(controll_signal)
 
