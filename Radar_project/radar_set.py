@@ -9,7 +9,7 @@ import time
 import math
 from multiprocessing import Process
 import threading
-import pcl
+#import pcl
 # import pdb
 
 
@@ -52,6 +52,7 @@ class VehicleGenerator():
         for n in range(self.number_vehicle):
             # spawn_point = carla.Transform()
             # spawn_point.location = self.world.get_random_location_from_navigation()
+            #print("spawn_points() is ", self.world.get_map().get_spawn_points())
             vehicle_transform = random.choice(self.world.get_map().get_spawn_points())
             # print("transform is ", vehicle_transform)
             position_list.append(vehicle_transform)
@@ -169,7 +170,7 @@ class World():
         If we have the client, we can directly retrieve the self.world.
         '''
         #print(client.get_available_maps())
-        self.world = client.load_world("/Game/Carla/Maps/Town01")
+        self.world = client.load_world("/Game/Carla/Maps/siskou_only_road")
 
         # 設計図
         # LiDARのチャンネルなどの設定
@@ -181,18 +182,22 @@ class World():
         # 観客視点とマップとwayPointの設定
         self.spectator = self.world.get_spectator()
         # self.spectator.set_transform(carla.Transform(carla.Location(x=90, y=131, z=10), carla.Rotation(pitch=-40, yaw=95)))
-        self.spectator.set_transform(carla.Transform(carla.Location(x=90, y=131, z=10), carla.Rotation(pitch=-40, yaw=95)))
+        self.spectator.set_transform(carla.Transform(carla.Location(x=0.0, y=0, z=10), carla.Rotation(pitch=-40, yaw=95)))
         self.map = self.world.get_map()
 
         waypoint_list = self.map.generate_waypoints(2.0)
         waypoint_tuple_list = self.map.get_topology()
         self.visualize_waypoint(waypoint_tuple_list)
 
+        # スポーンポイントを表示(test)
+        spawnpoint_list = self.world.get_map().get_spawn_points()
+        self.visualize_location(spawnpoint_list)
+
         '''
         IDによる設計図の選択.
         '''
         # Chose a vehicle blueprint
-        self.GestVehicle = VehicleGenerator(self.world, self.map, blueprint_library, 30)
+        self.GestVehicle = VehicleGenerator(self.world, self.map, blueprint_library, 4)
         # self.MainVehicle = VehicleGenerator(self.world, self.map, blueprint_library, 1)
 
         self.world = self.GestVehicle.create_vehicle()
@@ -208,7 +213,7 @@ class World():
         self.radar_bp.set_attribute('vertical_fov', str(9))
         self.radar_bp.set_attribute('range', str(100))
         self.radar_bp.set_attribute('points_per_second', str(1500))
-        rad_location = carla.Location(x=90.0, y=131, z=2.0)
+        rad_location = carla.Location(x=0.0, y=0, z=2.0)
         rad_rotation = carla.Rotation(pitch=-1, yaw=90)
         rad_box = carla.BoundingBox(rad_location, carla.Vector3D(x=0.5, y=0.5, z=0.5))
 
@@ -222,7 +227,7 @@ class World():
         )
 
         # アクターの設置場所の決定
-        camera_transform = carla.Transform(carla.Location(x=95, y=150, z=1.0), carla.Rotation(pitch=0, yaw=95))
+        camera_transform = carla.Transform(carla.Location(x=0, y=0, z=1.0), carla.Rotation(pitch=0, yaw=95))
         self.camera_actor = self.world.spawn_actor(self.camera_bp, camera_transform)
 
         self.rad_transform = carla.Transform(rad_location,rad_rotation)
@@ -241,12 +246,20 @@ class World():
 
     def visualize_waypoint(self, waypoint):
         for cuple_point in waypoint:
-            #print("point is ", cuple_point[0])
+            # print("point is ", cuple_point[0])
             self.world.debug.draw_line(
                 cuple_point[0].transform.location + carla.Location(z=0),
                 cuple_point[1].transform.location + carla.Location(z=0),
                 thickness=0.025,
                 color=carla.Color(0, 255, 255))
+
+    def visualize_location(self, point_list):
+        # print("point is ", point_list)
+        for point in point_list:
+            print("point is ", point)
+            self.world.debug.draw_point(point.location + carla.Location(z=0.1),
+                                            color=carla.Color(r=0, g=255, b=0), life_time = -1.0,
+                                        )
 
 
     def rad_callback(self, radar_data):
