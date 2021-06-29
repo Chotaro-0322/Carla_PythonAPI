@@ -13,16 +13,28 @@ import threading
 # import pdb
 
 
-class PedestrianGenerator():
-    def __init__(self, worls, map, blueprint_library, number_pedestrian):
-        self.number_vehicle = number_pedestrian
+class WalkerGenerator():
+    def __init__(self, world, map, blueprint_library):
         self.blueprint_vehicle = blueprint_library
-        self.world = self.world
-        self.map = mapself.vehicle_status = {}
+        self.world = world
 
-    def create_pedestrian(self):
-        self.waker_bp = self.world.get_blueprint_library().filter("walker.pedestrian.")
+    def create_walker(self):
+        self.walker_bp = random.choice(self.world.get_blueprint_library().filter("walker.pedestrian.*"))
         self.controller_bp = self.world.get_blueprint_library().find("controller.ai.walker")
+
+        self.walker_transform = carla.Transform(carla.Location(x=50, y=-3, z=1), carla.Rotation(pitch=0, yaw=0, roll=0))
+        self.walker = self.world.spawn_actor(self.walker_bp, self.walker_transform)
+        self.world.wait_for_tick()
+
+        self.controller = self.world.spawn_actor(self.controller_bp, carla.Transform(), self.walker)
+
+        self.controller.start()
+        # walker_location = self.world.get_random_location_from_navigation()
+        walker_location = carla.Location(x = 50, y = -3, z = 1)
+        self.controller.go_to_location(walker_location)
+
+        return self.world
+
 
 class VehicleGenerator():
     def __init__(self, world, map, blueprint_library, number_vehicle):
@@ -39,24 +51,38 @@ class VehicleGenerator():
         self.controller_list = []
         for n in range(self.number_vehicle):
             if n == 0:
-                vehicle_transform = carla.Transform(carla.Location(x=50, y=0, z=0), carla.Rotation(pitch=0, yaw=0, roll=0))
+                vehicle_transform = carla.Transform(carla.Location(x=50, y=0, z=1), carla.Rotation(pitch=0, yaw=0, roll=0))
                 vehicle_transform.rotation.yaw += 180
                 position_list.append(vehicle_transform)
-            if n == 1:
-                vehicle_transform = carla.Transform(carla.Location(x=-50, y=0, z=0), carla.Rotation(pitch=0, yaw=0, roll=0))
-                vehicle_transform.rotation.yaw += 180
+            else:
+                vehicle_transform = carla.Transform(carla.Location(x=0, y=-50, z=1), carla.Rotation(pitch=0, yaw=0, roll=0))
+                vehicle_transform.rotation.yaw += 90
                 position_list.append(vehicle_transform)
         num_lost_vehicle = 0
         for n, position in enumerate(position_list):
             try:
-                self.vehicle_bp = random.choice(self.blueprint_library.filter("vehicle.**.*"))
-                self.vehicle_actor = self.world.spawn_actor(self.vehicle_bp, position)
-                self.custom_controller = VehiclePIDController(self.vehicle_actor, args_lateral = {'K_P': 1, 'K_D': 0.0, 'K_I': 0}, args_longitudinal = {'K_P': 1, 'K_D': 0.0, 'K_I': 0.0})
-                self.vehicle_actor_list.append(self.vehicle_actor)
-                self.controller_list.append(self.custom_controller)
+                if n == 0:
+                    self.vehicle_bp = random.choice(self.blueprint_library.filter("vehicle.audi.a2"))
+                    # print("self.blueprint_library is ", self.blueprint_library.filter("vehicle"))
+                    self.vehicle_actor = self.world.spawn_actor(self.vehicle_bp, position)
+                    self.custom_controller = VehiclePIDController(self.vehicle_actor, args_lateral = {'K_P': 1, 'K_D': 0.0, 'K_I': 0}, args_longitudinal = {'K_P': 1, 'K_D': 0.0, 'K_I': 0.0})
+                    self.vehicle_actor_list.append(self.vehicle_actor)
+                    self.controller_list.append(self.custom_controller)
 
-                # 最初は全て衝突していない
-                self.vehicle_status[str(n - num_lost_vehicle)] = False
+                    # 最初は全て衝突していない
+                    self.vehicle_status[str(n - num_lost_vehicle)] = False
+
+                else:
+                    self.vehicle_bp = random.choice(self.blueprint_library.filter("vehicle.bmw.grandtourer"))
+                    # print("self.blueprint_library is ", self.blueprint_library.filter("vehicle"))
+                    self.vehicle_actor = self.world.spawn_actor(self.vehicle_bp, position)
+                    self.custom_controller = VehiclePIDController(self.vehicle_actor, args_lateral = {'K_P': 1, 'K_D': 0.0, 'K_I': 0}, args_longitudinal = {'K_P': 1, 'K_D': 0.0, 'K_I': 0.0})
+                    self.vehicle_actor_list.append(self.vehicle_actor)
+                    self.controller_list.append(self.custom_controller)
+
+                    # 最初は全て衝突していない
+                    self.vehicle_status[str(n - num_lost_vehicle)] = False
+
 
             except RuntimeError:
                 print("Warnig : 車の出現位置が被りました")
@@ -103,7 +129,10 @@ class World():
         If we have the client, we can directly retrieve the self.world.
         '''
         #print(client.get_available_maps())
-        self.world = client.load_world("/Game/Carla/Maps/siskou_only_road")
+        self.world = client.load_world("/Game/Carla/Maps/siskou_road")
+        # self.world = client.load_world("/Game/Carla/Maps/Town03")
+
+        print("navigation location is ", self.world.get_random_location_from_navigation())
 
         # 設計図
         # LiDARのチャンネルなどの設定
@@ -115,7 +144,7 @@ class World():
         # 観客視点とマップとwayPointの設定
         self.spectator = self.world.get_spectator()
         # self.spectator.set_transform(carla.Transform(carla.Location(x=90, y=131, z=10), carla.Rotation(pitch=-40, yaw=95)))
-        self.spectator.set_transform(carla.Transform(carla.Location(x=0.0, y=0, z=10), carla.Rotation(pitch=-40, yaw=95)))
+        self.spectator.set_transform(carla.Transform(carla.Location(x=0.0, y=0, z=30), carla.Rotation(pitch=-40, yaw=95)))
         self.map = self.world.get_map()
 
         waypoint_list = self.map.generate_waypoints(2.0)
@@ -135,6 +164,11 @@ class World():
 
         # self.world = self.MainVehicle.create_vehicle()
         self.world = self.GestVehicle.create_vehicle()
+
+        # chose a walker blueprint
+        self.Walker = WalkerGenerator(self.world, self.map, blueprint_library)
+
+        self.world = self.Walker.create_walker()
 
         self.camera_bp = self.world.get_blueprint_library().find('sensor.camera.rgb')
         self.camera_bp.set_attribute('image_size_x', '1920')
@@ -176,7 +210,7 @@ class World():
     def update(self):
         while True:
             self.GestVehicle.vehicle_transport()
-            time.sleep(0.001)
+            # time.sleep(0.001)
 
 if __name__ == "__main__":
     World = World()
