@@ -4,11 +4,17 @@ import carla
 from carla import Transform, Location, Rotation
 from agents.navigation.controller import VehiclePIDController
 
+import numpy as np
 import random
 import time
 import math
 from multiprocessing import Process
 import threading
+
+import pygame
+from pygame.locals import *
+
+import sys
 #import pcl
 # import pdb
 
@@ -22,19 +28,42 @@ class WalkerGenerator():
         self.walker_bp = random.choice(self.world.get_blueprint_library().filter("walker.pedestrian.*"))
         self.controller_bp = self.world.get_blueprint_library().find("controller.ai.walker")
 
-        self.walker_transform = carla.Transform(carla.Location(x=50, y=-3, z=1), carla.Rotation(pitch=0, yaw=0, roll=0))
+        self.walker_transform = carla.Transform(carla.Location(x = -20, y = -3, z = 1), carla.Rotation(pitch=0, yaw=0, roll=0))
         self.walker = self.world.spawn_actor(self.walker_bp, self.walker_transform)
         self.world.wait_for_tick()
 
         self.controller = self.world.spawn_actor(self.controller_bp, carla.Transform(), self.walker)
 
         self.controller.start()
+        speed = 1.6
         # walker_location = self.world.get_random_location_from_navigation()
-        walker_location = carla.Location(x = 50, y = -3, z = 1)
+        walker_location = carla.Location(x = 20, y = -3, z = 1)
+        self.visualize_location(walker_location)
         self.controller.go_to_location(walker_location)
+        self.controller.set_max_speed(speed)
 
         return self.world
 
+    def direction_set(self, direction):
+        # direction = carla.WalkerControl(direction)
+        self.controller.go_to_location(direction)
+
+    def stop(self):
+        self.controller.stop()
+
+    def start(self):
+        self.controller.start()
+
+    def speed(self, speed):
+        self.controller.set_max_speed(speed)
+
+
+    def visualize_location(self, point):
+        # print("point is ", point_list)
+        # print("point is ", point)
+        self.world.debug.draw_point(point + carla.Location(z=0.1),
+                                        color=carla.Color(r=255, g=0, b=0), life_time = -1.0,
+                                    )
 
 class VehicleGenerator():
     def __init__(self, world, map, blueprint_library, number_vehicle):
@@ -51,11 +80,11 @@ class VehicleGenerator():
         self.controller_list = []
         for n in range(self.number_vehicle):
             if n == 0:
-                vehicle_transform = carla.Transform(carla.Location(x=50, y=0, z=1), carla.Rotation(pitch=0, yaw=0, roll=0))
-                vehicle_transform.rotation.yaw += 180
+                vehicle_transform = carla.Transform(carla.Location(x=-100, y=3, z=1), carla.Rotation(pitch=0, yaw=0, roll=0))
+                vehicle_transform.rotation.yaw += 0
                 position_list.append(vehicle_transform)
             else:
-                vehicle_transform = carla.Transform(carla.Location(x=0, y=-50, z=1), carla.Rotation(pitch=0, yaw=0, roll=0))
+                vehicle_transform = carla.Transform(carla.Location(x=0, y=-100, z=1), carla.Rotation(pitch=0, yaw=0, roll=0))
                 vehicle_transform.rotation.yaw += 90
                 position_list.append(vehicle_transform)
         num_lost_vehicle = 0
@@ -105,11 +134,15 @@ class VehicleGenerator():
             if self.vehicle_status[str(i)] == False:
                 waypoint = self.map.get_waypoint(vehicle.get_location())
                 waypoint = random.choice(waypoint.next(5))
-                controll_signal = self.controller_list[i].run_step(20, waypoint)
+                controll_signal = self.controller_list[i].run_step(1000, waypoint)
                 self.vehicle_actor_list[i].apply_control(controll_signal)
             else:
                 controll_signal = carla.VehicleControl(brake=1.0)
                 self.vehicle_actor_list[i].apply_control(controll_signal)
+    def brake(self, vehicle_num = 0):
+        controll_signal = carla.VehicleControl(brake=1.0)
+        self.vehicle_actor_list[vehicle_num].apply_control(controll_signal)
+        
 
 class World():
     def __init__(self):
@@ -129,10 +162,10 @@ class World():
         If we have the client, we can directly retrieve the self.world.
         '''
         #print(client.get_available_maps())
-        self.world = client.load_world("/Game/Carla/Maps/siskou_road")
+        self.world = client.load_world("/Game/Carla/Maps/siskou_only_road")
         # self.world = client.load_world("/Game/Carla/Maps/Town03")
 
-        print("navigation location is ", self.world.get_random_location_from_navigation())
+        # print("navigation location is ", self.world.get_random_location_from_navigation())
 
         # 設計図
         # LiDARのチャンネルなどの設定
@@ -144,16 +177,16 @@ class World():
         # 観客視点とマップとwayPointの設定
         self.spectator = self.world.get_spectator()
         # self.spectator.set_transform(carla.Transform(carla.Location(x=90, y=131, z=10), carla.Rotation(pitch=-40, yaw=95)))
-        self.spectator.set_transform(carla.Transform(carla.Location(x=0.0, y=0, z=30), carla.Rotation(pitch=-40, yaw=95)))
+        self.spectator.set_transform(carla.Transform(carla.Location(x=0.0, y=0, z=30), carla.Rotation(pitch=-40, yaw=0)))
         self.map = self.world.get_map()
 
         waypoint_list = self.map.generate_waypoints(2.0)
         waypoint_tuple_list = self.map.get_topology()
-        self.visualize_waypoint(waypoint_tuple_list)
+        # self.visualize_waypoint(waypoint_tuple_list)
 
         # スポーンポイントを表示(test)
-        spawnpoint_list = self.world.get_map().get_spawn_points()
-        self.visualize_location(spawnpoint_list)
+        # spawnpoint_list = self.world.get_map().get_spawn_points()
+        # self.visualize_location(spawnpoint_list)
 
         '''
         IDによる設計図の選択.
@@ -173,10 +206,10 @@ class World():
         self.camera_bp = self.world.get_blueprint_library().find('sensor.camera.rgb')
         self.camera_bp.set_attribute('image_size_x', '1920')
         self.camera_bp.set_attribute('image_size_y', '1080')
-        self.camera_bp.set_attribute('fov', '200')
+        self.camera_bp.set_attribute('fov', '60')
 
         # アクターの設置場所の決定
-        camera_transform = carla.Transform(carla.Location(x=0, y=0, z=1.0), carla.Rotation(pitch=0, yaw=95))
+        camera_transform = carla.Transform(carla.Location(x=0, y=0, z=30), carla.Rotation(pitch=0, yaw=95))
         self.camera_actor = self.world.spawn_actor(self.camera_bp, camera_transform)
 
         # 天気の変更
@@ -189,6 +222,22 @@ class World():
 
         print(self.world.get_weather())
 
+        # pygame 画面設定
+        pygame.init()
+        self.vehicle_camera_H = 600
+        self.vehicle_camera_W = 800
+        self.screen = pygame.display.set_mode((self.vehicle_camera_W, self.vehicle_camera_H))
+        pygame.display.set_caption("Vehicle window")
+
+        '''
+        車両カメラの使用
+        '''
+        blueprint = self.world.get_blueprint_library().find('sensor.camera.rgb')
+        blueprint.set_attribute('image_size_x', str(self.vehicle_camera_W))
+        blueprint.set_attribute('image_size_y', str(self.vehicle_camera_H))
+        blueprint.set_attribute('fov', '60')
+        transform = carla.Transform(carla.Location(x=0.8, z=1.7))
+        self.vehicle_camera = self.world.spawn_actor(blueprint, transform, attach_to=self.GestVehicle.vehicle_actor_list[1])
 
     def visualize_waypoint(self, waypoint):
         for cuple_point in waypoint:
@@ -208,9 +257,46 @@ class World():
                                         )
 
     def update(self):
+        self.vehicle_camera.listen(lambda data: self.callback_camera(data))
+        start_time = time.time()
         while True:
+            # 車両にカメラをくっつける
+            # self.spectator.set_transform(self.camera_actor.get_transform())
             self.GestVehicle.vehicle_transport()
-            # time.sleep(0.001)
+            temp_time = round(time.time() - start_time, 2)
+            # print("walker location ", self.Walker.walker.get_location())
+            walker_location = self.Walker.walker.get_location()
+            vehicle_location = self.GestVehicle.vehicle_actor_list[1].get_location()
+
+            #pygame
+            # self.screen.fill((0, 0, 0))
+
+            # print("time is ", temp_time)
+            if walker_location.x > -6:
+                self.Walker.speed(0)
+
+            if vehicle_location.y > -38:
+                self.Walker.speed(2)
+
+            if vehicle_location.y > -20:
+                self.GestVehicle.brake(1)
+
+    def callback_camera(self, data):
+        pygame.display.update()
+        # print("data is ", data)
+        data = np.frombuffer(data.raw_data, dtype=np.dtype("uint8"))
+        data = np.reshape(data, (self.vehicle_camera_H, self.vehicle_camera_W, 4))
+        data = data[:, :, :3]
+        data = data[:, :, ::-1]
+        surface = pygame.surfarray.make_surface(data.swapaxes(0, 1))
+        self.screen.blit(surface, (0, 0))
+        # print("rgb data is ", data.raw_data[0])
+        for event in pygame.event.get():
+            if event.type == QUIT:
+                pygame.quit()
+                sys.exit()
+
+
 
 if __name__ == "__main__":
     World = World()
