@@ -78,6 +78,10 @@ class VehicleGenerator():
         self.vehicle_actor_list = []
         self.rad_actor_list = []
         self.controller_list = []
+        # vehicle light setting
+        # light_state = carla.VehicleLightState.LowBeam | carla.VehicleLightState.Position
+        light_state = carla.VehicleLightState(carla.VehicleLightState.LowBeam)
+        # ------------------------------------------
         for n in range(self.number_vehicle):
             if n == 0:
                 vehicle_transform = carla.Transform(carla.Location(x=-100, y=3, z=1), carla.Rotation(pitch=0, yaw=0, roll=0))
@@ -91,9 +95,12 @@ class VehicleGenerator():
         for n, position in enumerate(position_list):
             try:
                 if n == 0:
-                    self.vehicle_bp = random.choice(self.blueprint_library.filter("vehicle.audi.a2"))
-                    # print("self.blueprint_library is ", self.blueprint_library.filter("vehicle"))
+                    self.vehicle_bp = random.choice(self.blueprint_library.filter("vehicle.audi.tt"))
+                    print("self.blueprint_library is ", self.blueprint_library.filter("vehicle"))
                     self.vehicle_actor = self.world.spawn_actor(self.vehicle_bp, position)
+                    self.vehicle_actor.set_light_state(light_state)
+                    print("set_light_state is ", self.vehicle_actor.get_light_state())
+                    # SetVehicleLightState(self.vehicle_actor, light_state)
                     self.custom_controller = VehiclePIDController(self.vehicle_actor, args_lateral = {'K_P': 1, 'K_D': 0.0, 'K_I': 0}, args_longitudinal = {'K_P': 1, 'K_D': 0.0, 'K_I': 0.0})
                     self.vehicle_actor_list.append(self.vehicle_actor)
                     self.controller_list.append(self.custom_controller)
@@ -102,9 +109,11 @@ class VehicleGenerator():
                     self.vehicle_status[str(n - num_lost_vehicle)] = False
 
                 else:
-                    self.vehicle_bp = random.choice(self.blueprint_library.filter("vehicle.bmw.grandtourer"))
+                    self.vehicle_bp = random.choice(self.blueprint_library.filter("vehicle.mustang.mustang"))
                     # print("self.blueprint_library is ", self.blueprint_library.filter("vehicle"))
                     self.vehicle_actor = self.world.spawn_actor(self.vehicle_bp, position)
+                    self.vehicle_actor.set_light_state(light_state)
+                    # SetVehicleLightState(self.vehicle_actor, light_state)
                     self.custom_controller = VehiclePIDController(self.vehicle_actor, args_lateral = {'K_P': 1, 'K_D': 0.0, 'K_I': 0}, args_longitudinal = {'K_P': 1, 'K_D': 0.0, 'K_I': 0.0})
                     self.vehicle_actor_list.append(self.vehicle_actor)
                     self.controller_list.append(self.custom_controller)
@@ -162,7 +171,7 @@ class World():
         If we have the client, we can directly retrieve the self.world.
         '''
         #print(client.get_available_maps())
-        self.world = client.load_world("/Game/Carla/Maps/siskou_only_road")
+        self.world = client.load_world("/Game/Carla/Maps/siskou_road")
         # self.world = client.load_world("/Game/Carla/Maps/Town03")
 
         # print("navigation location is ", self.world.get_random_location_from_navigation())
@@ -214,20 +223,27 @@ class World():
 
         # 天気の変更
         weather = carla.WeatherParameters(
-            cloudiness=80.0,
-            precipitation=30.0,
-            sun_altitude_angle=70.0)
+            # cloudiness=80.0,
+            # precipitation=30.0,
+            sun_altitude_angle=-90.0)
 
         self.world.set_weather(weather)
 
         print(self.world.get_weather())
 
-        # pygame 画面設定
+        # Vehicle_pygame 画面設定
         pygame.init()
         self.vehicle_camera_H = 600
         self.vehicle_camera_W = 800
         self.screen = pygame.display.set_mode((self.vehicle_camera_W, self.vehicle_camera_H))
         pygame.display.set_caption("Vehicle window")
+
+        # street_pygame
+        pygame.init()
+        self.street_camera_H = 600
+        self.street_camera_W = 800
+        self.street_screen = pygame.display.set_mode((self.street_camera_W, self.street_camera_H))
+        pygame.display.set_caption("Street window")
 
         '''
         車両カメラの使用
