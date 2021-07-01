@@ -171,7 +171,7 @@ class World():
         If we have the client, we can directly retrieve the self.world.
         '''
         #print(client.get_available_maps())
-        self.world = client.load_world("/Game/Carla/Maps/siskou_road")
+        self.world = client.load_world("/Game/Carla/Maps/siskou_only_road")
         # self.world = client.load_world("/Game/Carla/Maps/Town03")
 
         # print("navigation location is ", self.world.get_random_location_from_navigation())
@@ -184,11 +184,10 @@ class World():
         blueprint_library = self.world.get_blueprint_library()
 
         # 観客視点とマップとwayPointの設定
-        self.spectator = self.world.get_spectator()
-        # self.spectator.set_transform(carla.Transform(carla.Location(x=90, y=131, z=10), carla.Rotation(pitch=-40, yaw=95)))
-        self.spectator.set_transform(carla.Transform(carla.Location(x=0.0, y=0, z=30), carla.Rotation(pitch=-40, yaw=0)))
-        self.map = self.world.get_map()
+        # self.spectator = self.world.get_spectator()
+        # self.spectator.set_transform(carla.Transform(carla.Location(x=1.0, y=0, z=30), carla.Rotation(pitch=-70, yaw=-90)))
 
+        self.map = self.world.get_map()
         waypoint_list = self.map.generate_waypoints(2.0)
         waypoint_tuple_list = self.map.get_topology()
         # self.visualize_waypoint(waypoint_tuple_list)
@@ -212,14 +211,6 @@ class World():
 
         self.world = self.Walker.create_walker()
 
-        self.camera_bp = self.world.get_blueprint_library().find('sensor.camera.rgb')
-        self.camera_bp.set_attribute('image_size_x', '1920')
-        self.camera_bp.set_attribute('image_size_y', '1080')
-        self.camera_bp.set_attribute('fov', '60')
-
-        # アクターの設置場所の決定
-        camera_transform = carla.Transform(carla.Location(x=0, y=0, z=30), carla.Rotation(pitch=0, yaw=95))
-        self.camera_actor = self.world.spawn_actor(self.camera_bp, camera_transform)
 
         # 天気の変更
         weather = carla.WeatherParameters(
@@ -233,17 +224,13 @@ class World():
 
         # Vehicle_pygame 画面設定
         pygame.init()
-        self.vehicle_camera_H = 600
-        self.vehicle_camera_W = 800
-        self.screen = pygame.display.set_mode((self.vehicle_camera_W, self.vehicle_camera_H))
-        pygame.display.set_caption("Vehicle window")
+        self.vehicle_camera_H = 350
+        self.vehicle_camera_W = 1000
 
-        # street_pygame
-        pygame.init()
-        self.street_camera_H = 600
-        self.street_camera_W = 800
-        self.street_screen = pygame.display.set_mode((self.street_camera_W, self.street_camera_H))
-        pygame.display.set_caption("Street window")
+        self.street_camera_H = 1080
+        self.street_camera_W = 1920
+        self.screen = pygame.display.set_mode((self.street_camera_W, self.street_camera_H))
+        pygame.display.set_caption("Vehicle window")
 
         '''
         車両カメラの使用
@@ -252,8 +239,18 @@ class World():
         blueprint.set_attribute('image_size_x', str(self.vehicle_camera_W))
         blueprint.set_attribute('image_size_y', str(self.vehicle_camera_H))
         blueprint.set_attribute('fov', '60')
-        transform = carla.Transform(carla.Location(x=0.8, z=1.7))
+        transform = carla.Transform(carla.Location(x=-0.88, y = -0.42, z=1.11))
         self.vehicle_camera = self.world.spawn_actor(blueprint, transform, attach_to=self.GestVehicle.vehicle_actor_list[1])
+
+        '''
+        交差点カメラの使用
+        '''
+        brueprint = self.world.get_blueprint_library().find('sensor.camera.rgb')
+        brueprint.set_attribute('image_size_x', str(self.street_camera_W))
+        brueprint.set_attribute('image_size_y', str(self.street_camera_H))
+        brueprint.set_attribute('fov', '110')
+        transform = carla.Transform(carla.Location(x=0, y=10, z=20), carla.Rotation(pitch=-40, yaw=-120))
+        self.street_camera = self.world.spawn_actor(brueprint, transform)
 
     def visualize_waypoint(self, waypoint):
         for cuple_point in waypoint:
@@ -273,7 +270,8 @@ class World():
                                         )
 
     def update(self):
-        self.vehicle_camera.listen(lambda data: self.callback_camera(data))
+        self.vehicle_camera.listen(lambda data: self.callback_camera_1(data))
+        self.street_camera.listen(lambda data: self.callback_camera_2(data))
         start_time = time.time()
         while True:
             # 車両にカメラをくっつける
@@ -284,34 +282,68 @@ class World():
             walker_location = self.Walker.walker.get_location()
             vehicle_location = self.GestVehicle.vehicle_actor_list[1].get_location()
 
+            
             #pygame
             # self.screen.fill((0, 0, 0))
+
+            # 動作シナリオ
+            # 車両を最初に止めておく(対 歩行者モード)
+            self.GestVehicle.brake(0)
+
+            # 歩行者を最初に止めておく(対 車両モード)
+            # self.Walker.walker.set_location(carla.Location(x=100, y=100, z=100))
+            # if vehicle_location.y > -15:
+            #     self.GestVehicle.brake(1)
 
             # print("time is ", temp_time)
             if walker_location.x > -6:
                 self.Walker.speed(0)
 
-            if vehicle_location.y > -38:
+            if vehicle_location.y > -40:
                 self.Walker.speed(2)
 
-            if vehicle_location.y > -20:
+            if vehicle_location.y > -25:
                 self.GestVehicle.brake(1)
 
-    def callback_camera(self, data):
+    def callback_camera_1(self, data):
         pygame.display.update()
         # print("data is ", data)
+        p1_camera = pygame.Rect(0, 0, self.vehicle_camera_W, self.vehicle_camera_H)
+
         data = np.frombuffer(data.raw_data, dtype=np.dtype("uint8"))
         data = np.reshape(data, (self.vehicle_camera_H, self.vehicle_camera_W, 4))
         data = data[:, :, :3]
         data = data[:, :, ::-1]
         surface = pygame.surfarray.make_surface(data.swapaxes(0, 1))
-        self.screen.blit(surface, (0, 0))
+        self.screen.blit(surface, (0, 0), p1_camera)
+        # self.screen.blit(surface, (0, 0), p1_camera)
         # print("rgb data is ", data.raw_data[0])
         for event in pygame.event.get():
             if event.type == QUIT:
                 pygame.quit()
                 sys.exit()
 
+    def callback_camera_2(self, data):
+        pygame.display.update()
+        # print("data is ", data)
+        p2_camera = pygame.Rect((self.vehicle_camera_W), 0, self.street_camera_W-self.vehicle_camera_W, self.street_camera_H-self.vehicle_camera_H)
+        p3_camera = pygame.Rect(0, (self.vehicle_camera_H), self.vehicle_camera_W, (self.street_camera_H-self.vehicle_camera_H))
+        p4_camera = pygame.Rect((self.vehicle_camera_W), (self.vehicle_camera_H), (self.street_camera_W-self.vehicle_camera_W), (self.street_camera_H-self.vehicle_camera_H))
+
+        data = np.frombuffer(data.raw_data, dtype=np.dtype("uint8"))
+        data = np.reshape(data, (self.street_camera_H, self.street_camera_W, 4))
+        data = data[:, :, :3]
+        data = data[:, :, ::-1]
+        # print("data is ", data)
+        surface = pygame.surfarray.make_surface(data.swapaxes(0, 1))
+        self.screen.blit(surface, ((self.vehicle_camera_W), 0), p2_camera)
+        self.screen.blit(surface, (0, (self.vehicle_camera_H)), p3_camera)
+        self.screen.blit(surface, ((self.vehicle_camera_W), (self.vehicle_camera_H)), p4_camera)
+        # print("rgb data is ", data.raw_data[0])
+        for event in pygame.event.get():
+            if event.type == QUIT:
+                pygame.quit()
+                sys.exit()
 
 
 if __name__ == "__main__":
