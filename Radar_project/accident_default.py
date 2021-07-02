@@ -20,15 +20,20 @@ import sys
 
 
 class WalkerGenerator():
-    def __init__(self, world, map, blueprint_library):
+    def __init__(self, world, map, blueprint_library, location):
         self.blueprint_vehicle = blueprint_library
         self.world = world
+        self.location = location
 
     def create_walker(self):
-        self.walker_bp = random.choice(self.world.get_blueprint_library().filter("walker.pedestrian.*"))
+        self.walker_bp = random.choice(self.world.get_blueprint_library().filter("walker.pedestrian.0008"))
+        # print("pedestrian is ", self.world.get_blueprint_library().filter("walker.pedestrian.*"))
         self.controller_bp = self.world.get_blueprint_library().find("controller.ai.walker")
 
-        self.walker_transform = carla.Transform(carla.Location(x = -20, y = -3, z = 1), carla.Rotation(pitch=0, yaw=0, roll=0))
+        """歩行者が交差点より少し離れているとき"""
+        self.walker_transform = carla.Transform(self.location, carla.Rotation(pitch=0, yaw=0, roll=0))
+        """歩行者が交差点にかなり近いとき"""
+        # self.walker_transform = carla.Transform(carla.Location(x = -13, y = -3, z = 1), carla.Rotation(pitch=0, yaw=0, roll=0))
         self.walker = self.world.spawn_actor(self.walker_bp, self.walker_transform)
         self.world.wait_for_tick()
 
@@ -57,6 +62,8 @@ class WalkerGenerator():
     def speed(self, speed):
         self.controller.set_max_speed(speed)
 
+    def transport(self, Location):
+        self.walker.set_location(Location)
 
     def visualize_location(self, point):
         # print("point is ", point_list)
@@ -96,7 +103,7 @@ class VehicleGenerator():
             try:
                 if n == 0:
                     self.vehicle_bp = random.choice(self.blueprint_library.filter("vehicle.audi.tt"))
-                    print("self.blueprint_library is ", self.blueprint_library.filter("vehicle"))
+                    # print("self.blueprint_library is ", self.blueprint_library.filter("vehicle"))
                     self.vehicle_actor = self.world.spawn_actor(self.vehicle_bp, position)
                     self.vehicle_actor.set_light_state(light_state)
                     print("set_light_state is ", self.vehicle_actor.get_light_state())
@@ -151,7 +158,12 @@ class VehicleGenerator():
     def brake(self, vehicle_num = 0):
         controll_signal = carla.VehicleControl(brake=1.0)
         self.vehicle_actor_list[vehicle_num].apply_control(controll_signal)
-        
+
+    def throttle(self, vehicle_num = 0):
+        controll_signal = carla.VehicleControl(throttle=1.0)
+        self.vehicle_actor_list[vehicle_num].apply_control(controll_signal)
+
+
 
 class World():
     def __init__(self):
@@ -181,7 +193,7 @@ class World():
         '''
         blueprint_library内に含まれる設計図のリストを作成
         '''
-        blueprint_library = self.world.get_blueprint_library()
+        self.blueprint_library = self.world.get_blueprint_library()
 
         # 観客視点とマップとwayPointの設定
         # self.spectator = self.world.get_spectator()
@@ -200,16 +212,13 @@ class World():
         IDによる設計図の選択.
         '''
         # Chose a vehicle blueprint
-        self.GestVehicle = VehicleGenerator(self.world, self.map, blueprint_library, 2)
+        self.GestVehicle = VehicleGenerator(self.world, self.map, self.blueprint_library, 2)
         # self.MainVehicle = VehicleGenerator(self.world, self.map, blueprint_library, 1)
 
         # self.world = self.MainVehicle.create_vehicle()
         self.world = self.GestVehicle.create_vehicle()
 
-        # chose a walker blueprint
-        self.Walker = WalkerGenerator(self.world, self.map, blueprint_library)
 
-        self.world = self.Walker.create_walker()
 
 
         # 天気の変更
@@ -238,8 +247,8 @@ class World():
         blueprint = self.world.get_blueprint_library().find('sensor.camera.rgb')
         blueprint.set_attribute('image_size_x', str(self.vehicle_camera_W))
         blueprint.set_attribute('image_size_y', str(self.vehicle_camera_H))
-        blueprint.set_attribute('fov', '60')
-        transform = carla.Transform(carla.Location(x=-0.88, y = -0.42, z=1.11))
+        blueprint.set_attribute('fov', '120')
+        transform = carla.Transform(carla.Location(x=-0.30, y = -0.4, z=1.13))
         self.vehicle_camera = self.world.spawn_actor(blueprint, transform, attach_to=self.GestVehicle.vehicle_actor_list[1])
 
         '''
@@ -269,46 +278,164 @@ class World():
                                             color=carla.Color(r=0, g=255, b=0), life_time = -1.0,
                                         )
 
-    def update(self):
+    def update(self, scene_number):
         self.vehicle_camera.listen(lambda data: self.callback_camera_1(data))
         self.street_camera.listen(lambda data: self.callback_camera_2(data))
         start_time = time.time()
+
+        """
+        1. (車vs歩行者)歩行者がそのままきて衝突
+        2. (車vs車)車同士がそのまま衝突しかける
+        3. (車vs人)車が一時停止→出発したときに歩行者登場
+        4. (車vs車)車が一時停止→出発したときに車登場
+        5. (車vs人)人が早めに通り過ぎる(Walker generatorの調整が必要)
+        6. (車vs車)車が早めに通り過ぎる
+        7. (車単体)ただ車が普通に走るのみ
+        8. (人単体)ただ人が普通に通るのみ
+        9. (車vs人)車が通過後に人が交差点を通る
+        10. (車vs車)近距離からスタートした車同士がぶつかる
+        """
+        # --------------------車の初期位置操作-------------------------------------------------------
+        if scene_number == 1:
+            # chose a walker blueprint
+            self.Walker = WalkerGenerator(self.world, self.map, self.blueprint_library, carla.Location(x = -18, y = -3, z = 1))
+            self.GestVehicle.vehicle_actor_list[0].set_location(carla.Location(x=-200, y=3, z=1))
+            self.GestVehicle.vehicle_actor_list[1].set_location(carla.Location(x=0, y=-100, z=1))
+        elif scene_number == 2:
+            # chose a walker blueprint
+            self.Walker = WalkerGenerator(self.world, self.map, self.blueprint_library, carla.Location(x = -18, y = -3, z = 1))
+            self.GestVehicle.vehicle_actor_list[0].set_location(carla.Location(x=-100, y=3, z=1))
+            self.GestVehicle.vehicle_actor_list[1].set_location(carla.Location(x=0, y=-100, z=1))
+        elif scene_number == 3:
+            # chose a walker blueprint
+            self.Walker = WalkerGenerator(self.world, self.map, self.blueprint_library, carla.Location(x = -25, y = -3, z = 1))
+            self.GestVehicle.vehicle_actor_list[0].set_location(carla.Location(x=-100, y=3, z=1))
+            self.GestVehicle.vehicle_actor_list[1].set_location(carla.Location(x=0, y=-80, z=1))
+        elif scene_number == 4:
+            # chose a walker blueprint
+            self.Walker = WalkerGenerator(self.world, self.map, self.blueprint_library, carla.Location(x = -18, y = -3, z = 1))
+            self.GestVehicle.vehicle_actor_list[0].set_location(carla.Location(x=-150, y=3, z=1))
+            self.GestVehicle.vehicle_actor_list[1].set_location(carla.Location(x=0, y=-80, z=1))
+        elif scene_number == 5:
+            # chose a walker blueprint
+            self.Walker = WalkerGenerator(self.world, self.map, self.blueprint_library, carla.Location(x = -10, y = -3, z = 1))
+            self.GestVehicle.vehicle_actor_list[0].set_location(carla.Location(x=-150, y=3, z=1))
+            self.GestVehicle.vehicle_actor_list[1].set_location(carla.Location(x=0, y=-100, z=1))
+        elif scene_number == 6:
+            # chose a walker blueprint
+            self.Walker = WalkerGenerator(self.world, self.map, self.blueprint_library, carla.Location(x = -18, y = -3, z = 1))
+            self.GestVehicle.vehicle_actor_list[0].set_location(carla.Location(x=-50, y=3, z=1))
+            self.GestVehicle.vehicle_actor_list[1].set_location(carla.Location(x=0, y=-100, z=1))
+        elif scene_number == 7:
+            # chose a walker blueprint
+            self.Walker = WalkerGenerator(self.world, self.map, self.blueprint_library, carla.Location(x = -18, y = -3, z = 1))
+            self.GestVehicle.vehicle_actor_list[0].set_location(carla.Location(x=-1000, y=3, z=1))
+            self.GestVehicle.vehicle_actor_list[1].set_location(carla.Location(x=0, y=-100, z=1))
+        elif scene_number == 8:
+            # chose a walker blueprint
+            self.Walker = WalkerGenerator(self.world, self.map, self.blueprint_library, carla.Location(x = -18, y = -3, z = 1))
+            self.GestVehicle.vehicle_actor_list[0].set_location(carla.Location(x=-300, y=3, z=1))
+            self.GestVehicle.vehicle_actor_list[1].set_location(carla.Location(x=-300, y=0, z=1))
+            self.vehicle_camera.stop()
+        elif scene_number == 9:
+            # chose a walker blueprint
+            self.Walker = WalkerGenerator(self.world, self.map, self.blueprint_library, carla.Location(x = -40, y = -3, z = 1))
+            self.GestVehicle.vehicle_actor_list[0].set_location(carla.Location(x=-300, y=3, z=1))
+            self.GestVehicle.vehicle_actor_list[1].set_location(carla.Location(x=0, y=-100, z=1))
+        elif scene_number == 10:
+            # chose a walker blueprint
+            self.Walker = WalkerGenerator(self.world, self.map, self.blueprint_library, carla.Location(x = -40, y = -3, z = 1))
+            self.GestVehicle.vehicle_actor_list[0].set_location(carla.Location(x=-40, y=3, z=1))
+            self.GestVehicle.vehicle_actor_list[1].set_location(carla.Location(x=0, y=-40, z=1))
+        elif scene_number == 11:
+            # chose a walker blueprint
+            self.Walker = WalkerGenerator(self.world, self.map, self.blueprint_library, carla.Location(x = -40, y = -3, z = 1))
+            self.GestVehicle.vehicle_actor_list[0].set_location(carla.Location(x=-40, y=3, z=1))
+            self.GestVehicle.vehicle_actor_list[1].set_location(carla.Location(x=0, y=-40, z=1))
+
+        self.world = self.Walker.create_walker()
+        # -----------------------------------------------------------------------------------------
+
         while True:
             # 車両にカメラをくっつける
             # self.spectator.set_transform(self.camera_actor.get_transform())
             self.GestVehicle.vehicle_transport()
             temp_time = round(time.time() - start_time, 2)
             # print("walker location ", self.Walker.walker.get_location())
-            walker_location = self.Walker.walker.get_location()
-            vehicle_location = self.GestVehicle.vehicle_actor_list[1].get_location()
 
-            
-            #pygame
-            # self.screen.fill((0, 0, 0))
+            self.scene_make(scene_number)
 
-            # 動作シナリオ
+
+    """
+    1. (車vs歩行者)歩行者一度交差点の近くで止まる
+    2. (車vs車)車同士がそのまま衝突しかける
+    3. (車vs人)車が一時停止→出発したときに歩行者登場
+    4. (車vs車)車が一時停止→出発したときに車登場
+    5. (車vs人)人が早めに通り過ぎる
+    6. (車vs車)車が早めに通り過ぎる
+    7. (車単体)ただ車が普通に走るのみ
+    8. (人単体)ただ人が普通に通るのみ
+    9. (車vs人)車が通過後に人が交差点を通る
+    """
+    def scene_make(self, scene_number):
+        walker_location = self.Walker.walker.get_location()
+        vehicle_location = self.GestVehicle.vehicle_actor_list[1].get_location()
+        gest_vehicle_location = self.GestVehicle.vehicle_actor_list[0].get_location()
+        if scene_number == 1:
             # 車両を最初に止めておく(対 歩行者モード)
             self.GestVehicle.brake(0)
-
-            # 歩行者を最初に止めておく(対 車両モード)
-            # self.Walker.walker.set_location(carla.Location(x=100, y=100, z=100))
-            # if vehicle_location.y > -15:
-            #     self.GestVehicle.brake(1)
-
-            # print("time is ", temp_time)
             if walker_location.x > -6:
                 self.Walker.speed(0)
-
             if vehicle_location.y > -40:
                 self.Walker.speed(2)
-
-            if vehicle_location.y > -25:
+            if vehicle_location.y > -24.5:
+                self.GestVehicle.brake(1)
+        elif scene_number == 2:
+            # 歩行者を最初に止めておく(対 車両モード)
+            self.Walker.walker.set_location(carla.Location(x=100, y=100, z=100))
+            if vehicle_location.y > -15:
+                self.GestVehicle.brake(1)
+        elif scene_number == 3:
+            self.GestVehicle.vehicle_actor_list[0].set_location(carla.Location(x=100, y=100, z=100))
+            self.GestVehicle.brake(0)
+            if vehicle_location.y > -26:
+                self.GestVehicle.brake(1)
+            if walker_location.x > -8:
+                self.GestVehicle.throttle(1)
+            if walker_location.x > -4.5:
+                self.GestVehicle.brake(1)
+        elif scene_number == 4:
+            self.Walker.walker.set_location(carla.Location(x=100, y=100, z=100))
+            if vehicle_location.y > -23.5:
+                self.GestVehicle.brake(1)
+            if gest_vehicle_location.x > -53:
+                self.GestVehicle.throttle(1)
+            if gest_vehicle_location.x > -6:
+                self.GestVehicle.brake(1)
+        elif scene_number == 5:
+            self.GestVehicle.brake(0)
+        elif scene_number == 6:
+            self.Walker.walker.set_location(carla.Location(x=100, y=100, z=100))
+        elif scene_number == 7:
+            self.Walker.walker.set_location(carla.Location(x=100, y=100, z=100))
+        elif scene_number == 8:
+            self.GestVehicle.brake(0)
+            self.GestVehicle.brake(1)
+        elif scene_number == 9:
+            self.GestVehicle.brake(0)
+        elif scene_number == 10:
+            self.Walker.walker.set_location(carla.Location(x=100, y=100, z=100))
+            if vehicle_location.y > -10:
+                self.GestVehicle.brake(1)
+        elif scene_number == 11:
+            if vehicle_location.y > -10:
                 self.GestVehicle.brake(1)
 
     def callback_camera_1(self, data):
         pygame.display.update()
         # print("data is ", data)
         p1_camera = pygame.Rect(0, 0, self.vehicle_camera_W, self.vehicle_camera_H)
+        self.GestVehicle.brake(0)
 
         data = np.frombuffer(data.raw_data, dtype=np.dtype("uint8"))
         data = np.reshape(data, (self.vehicle_camera_H, self.vehicle_camera_W, 4))
@@ -348,4 +475,4 @@ class World():
 
 if __name__ == "__main__":
     World = World()
-    World.update()
+    World.update(1)
