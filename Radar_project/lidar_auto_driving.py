@@ -70,7 +70,7 @@ class World():
         If we have the client, we can directly retrieve the self.world.
         """
         #print(client.get_available_maps())
-        self.world = client.load_world("/Game/Carla/Maps/six_map")
+        self.world = client.load_world("/Game/Carla/Maps/Town04")
 
         # 設計図
         # LiDARのチャンネルなどの設定
@@ -145,7 +145,7 @@ class World():
         #print("lidar_data is ", lidar_data.raw_data)
         data = np.copy(np.frombuffer(lidar_data.raw_data, dtype=np.dtype("f4")))
         data = np.reshape(data, (int(data.shape[0] / 4), 4))
-        #print("data is ", data.shape)
+        # print("data is ", data)
 
         intensity = data[:, -1]
         points = data[:, :-1]
@@ -153,8 +153,6 @@ class World():
 
         self.buf["pts"] = points
         self.buf["intensity"] = intensity
-
-
 
     def carlaEventLoop(self, world):
         while True:
